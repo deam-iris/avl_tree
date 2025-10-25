@@ -78,16 +78,16 @@ impl<K: Ord, V> AvlTree<K, V> {
 
 
     pub fn pop_first(&mut self) -> Option<(K, V)> {
-        let (key, value) = self.root.remove_minimum()?;
+        let min: Node<K, V> = self.root.remove_minimum()?;
         self.node_count -= 1;
-        Some((key, value))
+        Some((min.key, min.value))
     }
 
 
     pub fn pop_last(&mut self) -> Option<(K, V)> {
-        let (key, value) = self.root.remove_maximum()?;
+        let max: Node<K, V> = self.root.remove_maximum()?;
         self.node_count -= 1;
-        Some((key, value))
+        Some((max.key, max.value))
     }
 
 
@@ -121,23 +121,84 @@ impl<K: Ord, V> AvlTree<K, V> {
 
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        match self.root.insert_(Box::new(Node::new(key, value))) {
-            None => {
-                self.node_count += 1;
-                None
+        let mut path: Vec<*mut Node<K, V>> = Vec::with_capacity(128);
+        let mut current: Option<&mut Node<K, V>> = self.root.as_deref_mut();
+        while let Some(node) = current {
+            path.push(node);
+            if key < node.key {
+                current = node.left.as_deref_mut();
+            } else if key > node.key {
+                current = node.right.as_deref_mut();
+            } else {
+                return Some(memory::replace(&mut node.value, value));
             }
-            Some(old) => Some(old),
         }
+        let new: Box<Node<K, V>> = Box::new(Node::new(key, value));
+        if let Some(parent) = path.last() {
+            let parent: &mut Node<K, V> = unsafe { &mut **parent };
+            if new.key < parent.key {
+                parent.left = Some(new);
+            } else {
+                parent.right = Some(new);
+            }
+        } else {
+            self.root = Some(new);
+        }
+        AvlTree::retrace(path, false);
+        self.node_count += 1;
+        None
     }
 
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        match self.root.remove(key) {
-            Some(removed) => {
-                self.node_count -= 1;
-                Some(removed)
+        let mut path: Vec<*mut Node<K, V>> = Vec::with_capacity(128);
+        let mut current: Option<&mut Node<K, V>> = self.root.as_deref_mut();
+        while let Some(node) = current {
+            if *key < node.key {
+                path.push(node);
+                current = node.left.as_deref_mut();
+            } else if *key > node.key {
+                path.push(node);
+                current = node.right.as_deref_mut();
+            } else {
+                current = Some(node);
+                break;
             }
-            None => None,
+        }
+        let node: &mut Node<K, V> = current?;
+        let removed: V;
+        if node.left.is_some() && node.right.is_some() {
+            let successor: Node<K, V> = node.right.remove_minimum().unwrap();
+            let _   = memory::replace(&mut node.key, successor.key);
+            removed = memory::replace(&mut node.value, successor.value);
+            path.push(node);
+        } else if let Some(mut child) = node.left.take().or(node.right.take()) {
+            memory::swap(node, &mut child); // `node` is `child` now.
+            removed = child.value;
+        } else if let Some(parent) = path.last() {
+            let parent: &mut Node<K, V> = unsafe { &mut **parent };
+            removed = if *key < parent.key {
+                parent.left.take()
+            } else {
+                parent.right.take()
+            }.unwrap().value;
+        } else {
+            removed = self.root.take().unwrap().value;
+        }
+        AvlTree::retrace(path, true);
+        self.node_count -= 1;
+        Some(removed)
+    }
+
+
+    fn retrace(mut path: Vec<*mut Node<K, V>>, for_removal: bool) {
+        while let Some(ancestor) = path.pop() {
+            let ancestor: &mut Node<K, V> = unsafe { &mut *ancestor };
+            ancestor.update_height();
+            ancestor.rebalance();
+            if ancestor.balance_factor().abs() == for_removal as i32 {
+                break;
+            }
         }
     }
 
@@ -306,7 +367,6 @@ impl<K: Ord, V> Node<K, V> {
 
     // Rebalances a subtree rooted at `self`.
     fn rebalance(&mut self) {
-        self.update_height();
         if self.balance_factor() == -2 { // `self` is left-heavy.
             let left: &mut Node<K, V> = self.left.as_deref_mut().unwrap();
             if left.balance_factor() == 1 {
@@ -327,10 +387,8 @@ impl<K: Ord, V> Node<K, V> {
 
 trait OptionNodeExt<K: Ord, V> {
     fn height(&self) -> u8;
-    fn insert_(&mut self, new: Box<Node<K, V>>) -> Option<V>;
-    fn remove(&mut self, key: &K) -> Option<V>;
-    fn remove_minimum(&mut self) -> Option<(K, V)>;
-    fn remove_maximum(&mut self) -> Option<(K, V)>;
+    fn remove_minimum(&mut self) -> Option<Node<K, V>>;
+    fn remove_maximum(&mut self) -> Option<Node<K, V>>;
 }
 
 
@@ -341,84 +399,47 @@ impl<K: Ord, V> OptionNodeExt<K, V> for Option<Box<Node<K, V>>> {
     }
 
 
-    fn insert_(&mut self, new: Box<Node<K, V>>) -> Option<V> {
-        let Some(mut node) = self.take() else {
-            *self = Some(new);
-            return None;
-        };
-        let old: Option<V>;
-        if new.key < node.key {
-            old = node.left.insert_(new);
-        } else if new.key > node.key {
-            old = node.right.insert_(new);
-        } else {
-            old = Some(memory::replace(&mut node.value, new.value));
+    fn remove_minimum(&mut self) -> Option<Node<K, V>> {
+        let mut path: Vec<*mut Node<K, V>> = Vec::with_capacity(128);
+        let mut current: Option<&mut Node<K, V>> = self.as_deref_mut();
+        while let Some(node) = current {
+            path.push(node);
+            current = node.left.as_deref_mut();
         }
-        node.rebalance();
-        *self = Some(node);
-        old
+        let node: &mut Node<K, V> = unsafe { &mut *path.pop()? };
+        let min: Box<Node<K, V>>;
+        if let Some(mut right) = node.right.take() {
+            memory::swap(node, &mut right); // `node` is `right` now.
+            min = right;
+        } else if let Some(parent) = path.last() {
+            min = unsafe { &mut **parent }.left.take().unwrap();
+        } else {
+            min = self.take().unwrap();
+        }
+        AvlTree::retrace(path, true);
+        Some(*min)
     }
 
 
-    fn remove(&mut self, key: &K) -> Option<V> {
-        let Some(mut node) = self.take() else {
-            return None;
-        };
-        let removed: Option<V>;
-        if *key < node.key {
-            removed = node.left.remove(key);
-        } else if *key > node.key {
-            removed = node.right.remove(key);
-        } else if node.left.is_some() && node.right.is_some() {
-            removed = Some(node.value);
-            (node.key, node.value) = node.right.remove_minimum().unwrap();
-        } else if let Some(child) = node.left.or(node.right) {
-            removed = Some(node.value);
-            node = child;
-        } else {
-            return Some(node.value);
+    fn remove_maximum(&mut self) -> Option<Node<K, V>> {
+        let mut path: Vec<*mut Node<K, V>> = Vec::with_capacity(128);
+        let mut current: Option<&mut Node<K, V>> = self.as_deref_mut();
+        while let Some(node) = current {
+            path.push(node);
+            current = node.right.as_deref_mut();
         }
-        node.rebalance();
-        *self = Some(node);
-        removed
-    }
-
-
-    fn remove_minimum(&mut self) -> Option<(K, V)> {
-        let Some(mut node) = self.take() else {
-            return None
-        };
-        let min: Option<(K, V)>;
-        if node.left.is_some() {
-            min = node.left.remove_minimum();
-        } else if let Some(right) = node.right {
-            min = Some((node.key, node.value));
-            node = right;
+        let node: &mut Node<K, V> = unsafe { &mut *path.pop()? };
+        let max: Box<Node<K, V>>;
+        if let Some(mut left) = node.left.take() {
+            memory::swap(node, &mut left); // `node` is `left` now.
+            max = left;
+        } else if let Some(parent) = path.last() {
+            max = unsafe { &mut **parent }.right.take().unwrap();
         } else {
-            return Some((node.key, node.value));
+            max = self.take().unwrap();
         }
-        node.rebalance();
-        *self = Some(node);
-        min
-    }
-
-
-    fn remove_maximum(&mut self) -> Option<(K, V)> {
-        let Some(mut node) = self.take() else {
-            return None
-        };
-        let max: Option<(K, V)>;
-        if node.right.is_some() {
-            max = node.right.remove_maximum();
-        } else if let Some(left) = node.left {
-            max = Some((node.key, node.value));
-            node = left;
-        } else {
-            return Some((node.key, node.value));
-        }
-        node.rebalance();
-        *self = Some(node);
-        max
+        AvlTree::retrace(path, true);
+        Some(*max)
     }
 
 }

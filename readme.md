@@ -6,14 +6,10 @@ When implementing an AVL tree, there are some choices:
 * Storing the balance factor or height in a node.
 * Taking a recursive or iterative approach.
 
-This is a recursive implementation of an AVL tree that stores the height in a node and does not store the parent pointer in it. Key points:
+This is an iterative implementation of an AVL tree that stores the height in a node and does not store the parent pointer in it. Key points:
 * Written in pure Rust.
-* No unsafe code (other than [the mutable iterator](src/avl.rs#L544)).
 * The key data type can be any type that has Ord.
 * Each node is identified by a key, and so there are no nodes with the same key.
-
-[The iterative implementation](/../iterative)
-is slightly faster, but uses more unsafe code and is more complex because it requires tracing the path of ancestor nodes during tree modification.
 
 ## Description
 <picture>
