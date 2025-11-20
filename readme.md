@@ -9,7 +9,7 @@ When implementing an AVL tree, there are some choices:
 This is a recursive implementation of an AVL tree that stores the height in a node
 and does not store the parent pointer in it. Key points:
 * Written in pure Rust.
-* No `unsafe` code (other than the [mutable iterator](src/avl.rs#L544)).
+* No `unsafe` code (other than the [mutable iterator](src/avl.rs#L527)).
 * The key type can be any type that has `Ord`.
 * Each node is identified by a key, and so there are no nodes with the same key.
 

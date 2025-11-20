@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use std::mem as memory;
+use std::mem;
 
 
 #[derive(Clone, Default)]
@@ -48,17 +48,17 @@ impl<K: Ord, V> AvlTree<K, V> {
 
 
     pub fn get(&self, key: &K) -> Option<&V> {
-        Some(&self.root.as_ref()?.get(&key)?.value)
+        Some(&self.root.as_deref()?.get(&key)?.value)
     }
 
 
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        Some(&mut self.root.as_mut()?.get_mut(&key)?.value)
+        Some(&mut self.root.as_deref_mut()?.get_mut(&key)?.value)
     }
 
 
     pub fn first_key_value(&self) -> Option<(&K, &V)> {
-        Some(self.root.as_ref()?.minimum())
+        Some(self.root.as_deref()?.minimum())
     }
 
 
@@ -121,7 +121,7 @@ impl<K: Ord, V> AvlTree<K, V> {
 
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        match self.root.insert_(Box::new(Node::new(key, value))) {
+        match self.root.append(Box::new(Node::new(key, value))) {
             None => {
                 self.node_count += 1;
                 None
@@ -157,106 +157,89 @@ impl<K: Ord, V> Node<K, V> {
     }
 
 
-    fn get(&self, with: &K) -> Option<&Self> {
-        let mut current: Option<&Node<K, V>> = Some(self);
-        while let Some(node) = current {
-            if *with < node.key {
-                current = node.left.as_deref();
-            } else if *with > node.key {
-                current = node.right.as_deref();
-            } else {
-                break;
-            }
+    fn get(&self, key: &K) -> Option<&Self> {
+        if *key < self.key {
+            self.left.as_deref()?.get(key)
+        } else if *key > self.key {
+            self.right.as_deref()?.get(key)
+        } else {
+            Some(self)
         }
-        current
     }
 
 
-    fn get_mut(&mut self, with: &K) -> Option<&mut Self> {
-        let mut current: Option<&mut Node<K, V>> = Some(self);
-        while let Some(node) = current {
-            if *with < node.key {
-                current = node.left.as_deref_mut();
-            } else if *with > node.key {
-                current = node.right.as_deref_mut();
-            } else {
-                current = Some(node);
-                break;
-            }
+    fn get_mut(&mut self, key: &K) -> Option<&mut Self> {
+        if *key < self.key {
+            self.left.as_deref_mut()?.get_mut(key)
+        } else if *key > self.key {
+            self.right.as_deref_mut()?.get_mut(key)
+        } else {
+            Some(self)
         }
-        current
     }
 
 
-    fn minimum(mut self: &Self) -> (&K, &V) {
-        while let Some(left) = self.left.as_deref() {
-            self = left
+    fn minimum(&self) -> (&K, &V) {
+        match self.left.as_deref() {
+            Some(left) => left.minimum(),
+            None => (&self.key, &self.value),
         }
-        (&self.key, &self.value)
     }
 
 
-    fn minimum_mut(mut self: &mut Self) -> (&K, &mut V) {
-        while let Some(left) = self.left.as_deref_mut() {
-            self = left
+    fn minimum_mut(&mut self) -> (&K, &mut V) {
+        match self.left.as_deref_mut() {
+            Some(left) => left.minimum_mut(),
+            None => (&self.key, &mut self.value),
         }
-        (&self.key, &mut self.value)
     }
 
 
-    fn maximum(mut self: &Self) -> (&K, &V) {
-        while let Some(right) = self.right.as_deref() {
-            self = right
+    fn maximum(&self) -> (&K, &V) {
+        match self.right.as_deref() {
+            Some(right) => right.maximum(),
+            None => (&self.key, &self.value),
         }
-        (&self.key, &self.value)
     }
 
 
-    fn maximum_mut(mut self: &mut Self) -> (&K, &mut V) {
-        while let Some(right) = self.right.as_deref_mut() {
-            self = right
+    fn maximum_mut(&mut self) -> (&K, &mut V) {
+        match self.right.as_deref_mut() {
+            Some(right) => right.maximum_mut(),
+            None => (&self.key, &mut self.value),
         }
-        (&self.key, &mut self.value)
     }
 
 
     fn predecessor(&self, of: &K) -> Option<(&K, &V)> {
-        let mut predecessor: Option<(&K, &V)> = None;
-        let mut current: Option<&Node<K, V>> = Some(self);
-        while let Some(node) = current {
-            if *of < node.key {
-                current = node.left.as_deref();
-            } else if *of > node.key {
-                predecessor = Some((&node.key, &node.value));
-                current = node.right.as_deref();
-            } else if let Some(left) = node.left.as_deref() {
-                predecessor = Some(left.maximum());
-                break;
-            } else {
-                break;
-            }
+        if *of < self.key {
+            self.left.as_deref()?.predecessor(of)
+        } else if *of > self.key {
+            self.right
+                .as_deref()
+                .and_then(|right: &Node<K, V>| right.predecessor(of))
+                .or(Some((&self.key, &self.value)))
+        } else if let Some(left) = self.left.as_deref() {
+            Some(left.maximum())
+        } else {
+            None
         }
-        predecessor
     }
 
 
     fn successor(&self, of: &K) -> Option<(&K, &V)> {
-        let mut successor: Option<(&K, &V)> = None;
-        let mut current: Option<&Node<K, V>> = Some(self);
-        while let Some(node) = current {
-            if *of < node.key {
-                successor = Some((&node.key, &node.value));
-                current = node.left.as_deref();
-            } else if *of > node.key {
-                current = node.right.as_deref();
-            } else if let Some(right) = node.right.as_deref() {
-                successor = Some(right.minimum());
-                break;
-            } else {
-                break;
-            }
+        if *of < self.key {
+            self.left
+                .as_deref()
+                .and_then(|left: &Node<K, V>| left.successor(of))
+                .or(Some((&self.key, &self.value)))
+        } else if *of > self.key {
+            self.right.as_deref()?.successor(of)
+        } else if let Some(right) = self.right.as_deref() {
+            Some(right.minimum())
+        } else {
+            None
         }
-        successor
     }
 
 
@@ -280,7 +263,7 @@ impl<K: Ord, V> Node<K, V> {
     fn rotate_left(&mut self) {
         let mut t: Box<Node<K, V>> = self.right.take().unwrap();
         self.right = t.left.take();
-        memory::swap(self, &mut t); // `self` is `t` now.
+        mem::swap(self, &mut t); // `self` is `t` now.
         t.update_height();
         self.left = Some(t);
         self.update_height();
@@ -297,7 +280,7 @@ impl<K: Ord, V> Node<K, V> {
     fn rotate_right(&mut self) {
         let mut r: Box<Node<K, V>> = self.left.take().unwrap();
         self.left = r.right.take();
-        memory::swap(self, &mut r); // `self` is `r` now.
+        mem::swap(self, &mut r); // `self` is `r` now.
         r.update_height();
         self.right = Some(r);
         self.update_height();
@@ -327,7 +310,7 @@ impl<K: Ord, V> Node<K, V> {
 
 trait OptionNodeExt<K: Ord, V> {
     fn height(&self) -> u8;
-    fn insert_(&mut self, new: Box<Node<K, V>>) -> Option<V>;
+    fn append(&mut self, new: Box<Node<K, V>>) -> Option<V>;
     fn remove(&mut self, key: &K) -> Option<V>;
     fn remove_minimum(&mut self) -> Option<(K, V)>;
     fn remove_maximum(&mut self) -> Option<(K, V)>;
@@ -341,18 +324,18 @@ impl<K: Ord, V> OptionNodeExt<K, V> for Option<Box<Node<K, V>>> {
     }
 
 
-    fn insert_(&mut self, new: Box<Node<K, V>>) -> Option<V> {
+    fn append(&mut self, new: Box<Node<K, V>>) -> Option<V> {
         let Some(mut node) = self.take() else {
             *self = Some(new);
             return None;
         };
         let old: Option<V>;
         if new.key < node.key {
-            old = node.left.insert_(new);
+            old = node.left.append(new);
         } else if new.key > node.key {
-            old = node.right.insert_(new);
+            old = node.right.append(new);
         } else {
-            old = Some(memory::replace(&mut node.value, new.value));
+            old = Some(mem::replace(&mut node.value, new.value));
         }
         node.rebalance();
         *self = Some(node);
