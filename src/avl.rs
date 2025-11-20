@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-use std::mem as memory;
+use std::mem;
 
 
 #[derive(Clone, Default)]
@@ -48,17 +48,17 @@ impl<K: Ord, V> AvlTree<K, V> {
 
 
     pub fn get(&self, key: &K) -> Option<&V> {
-        Some(&self.root.as_ref()?.get(&key)?.value)
+        Some(&self.root.as_deref()?.get(&key)?.value)
     }
 
 
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        Some(&mut self.root.as_mut()?.get_mut(&key)?.value)
+        Some(&mut self.root.as_deref_mut()?.get_mut(&key)?.value)
     }
 
 
     pub fn first_key_value(&self) -> Option<(&K, &V)> {
-        Some(self.root.as_ref()?.minimum())
+        Some(self.root.as_deref()?.minimum())
     }
 
 
@@ -130,7 +130,7 @@ impl<K: Ord, V> AvlTree<K, V> {
             } else if key > node.key {
                 current = node.right.as_deref_mut();
             } else {
-                return Some(memory::replace(&mut node.value, value));
+                return Some(mem::replace(&mut node.value, value));
             }
         }
         let new: Box<Node<K, V>> = Box::new(Node::new(key, value));
@@ -169,11 +169,11 @@ impl<K: Ord, V> AvlTree<K, V> {
         let removed: V;
         if node.left.is_some() && node.right.is_some() {
             let successor: Node<K, V> = node.right.remove_minimum().unwrap();
-            let _   = memory::replace(&mut node.key, successor.key);
-            removed = memory::replace(&mut node.value, successor.value);
+            let _   = mem::replace(&mut node.key, successor.key);
+            removed = mem::replace(&mut node.value, successor.value);
             path.push(node);
         } else if let Some(mut child) = node.left.take().or(node.right.take()) {
-            memory::swap(node, &mut child); // `node` is `child` now.
+            mem::swap(node, &mut child); // `node` is `child` now.
             removed = child.value;
         } else if let Some(parent) = path.last() {
             let parent: &mut Node<K, V> = unsafe { &mut **parent };
@@ -218,12 +218,12 @@ impl<K: Ord, V> Node<K, V> {
     }
 
 
-    fn get(&self, with: &K) -> Option<&Self> {
+    fn get(&self, key: &K) -> Option<&Self> {
         let mut current: Option<&Node<K, V>> = Some(self);
         while let Some(node) = current {
-            if *with < node.key {
+            if *key < node.key {
                 current = node.left.as_deref();
-            } else if *with > node.key {
+            } else if *key > node.key {
                 current = node.right.as_deref();
             } else {
                 break;
@@ -233,12 +233,12 @@ impl<K: Ord, V> Node<K, V> {
     }
 
 
-    fn get_mut(&mut self, with: &K) -> Option<&mut Self> {
+    fn get_mut(&mut self, key: &K) -> Option<&mut Self> {
         let mut current: Option<&mut Node<K, V>> = Some(self);
         while let Some(node) = current {
-            if *with < node.key {
+            if *key < node.key {
                 current = node.left.as_deref_mut();
-            } else if *with > node.key {
+            } else if *key > node.key {
                 current = node.right.as_deref_mut();
             } else {
                 current = Some(node);
@@ -341,7 +341,7 @@ impl<K: Ord, V> Node<K, V> {
     fn rotate_left(&mut self) {
         let mut t: Box<Node<K, V>> = self.right.take().unwrap();
         self.right = t.left.take();
-        memory::swap(self, &mut t); // `self` is `t` now.
+        mem::swap(self, &mut t); // `self` is `t` now.
         t.update_height();
         self.left = Some(t);
         self.update_height();
@@ -358,7 +358,7 @@ impl<K: Ord, V> Node<K, V> {
     fn rotate_right(&mut self) {
         let mut r: Box<Node<K, V>> = self.left.take().unwrap();
         self.left = r.right.take();
-        memory::swap(self, &mut r); // `self` is `r` now.
+        mem::swap(self, &mut r); // `self` is `r` now.
         r.update_height();
         self.right = Some(r);
         self.update_height();
@@ -409,7 +409,7 @@ impl<K: Ord, V> OptionNodeExt<K, V> for Option<Box<Node<K, V>>> {
         let node: &mut Node<K, V> = unsafe { &mut *path.pop()? };
         let min: Box<Node<K, V>>;
         if let Some(mut right) = node.right.take() {
-            memory::swap(node, &mut right); // `node` is `right` now.
+            mem::swap(node, &mut right); // `node` is `right` now.
             min = right;
         } else if let Some(parent) = path.last() {
             min = unsafe { &mut **parent }.left.take().unwrap();
@@ -431,7 +431,7 @@ impl<K: Ord, V> OptionNodeExt<K, V> for Option<Box<Node<K, V>>> {
         let node: &mut Node<K, V> = unsafe { &mut *path.pop()? };
         let max: Box<Node<K, V>>;
         if let Some(mut left) = node.left.take() {
-            memory::swap(node, &mut left); // `node` is `left` now.
+            mem::swap(node, &mut left); // `node` is `left` now.
             max = left;
         } else if let Some(parent) = path.last() {
             max = unsafe { &mut **parent }.right.take().unwrap();
